@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>One Thing at a Time — retro focus timer</title>
+<style>
+  :root {
+    --paper:      #efe5cf;   /* room wall */
+    --plastic:    #f9f3e4;   /* device body */
+    --plastic-2:  #f2e9d4;   /* inset panels */
+    --face:       #fdfaf1;   /* dial face */
+    --ink:        #3b2f23;   /* warm brown ink */
+    --ink-2:      #6d5d4b;
+    --muted:      #9c8b74;
+    --line:       #d9cbae;
+    --shadow:     rgba(59,47,35,0.18);
+    --accent:     #ff4f9a;   /* current disc color (JS swaps) */
+    --accent-deep:#d12d77;
+    --cream-text: #fdfaf1;
+    --good-text:  #5c7027;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background:
+      radial-gradient(1200px 700px at 50% -10%, #f7efdd 0%, var(--paper) 60%);
+    color: var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    padding:24px 12px; min-height:100vh;
+  }
+
+  /* ---------------- device body ---------------- */
+  .device {
+    width: 400px; max-width:100%;
+    background: var(--plastic);
+    border-radius: 30px;
+    border: 1px solid #e0d3b8;
+    box-shadow:
+      0 30px 60px var(--shadow),
+      inset 0 2px 0 #fffdf6,
+      inset 0 -3px 0 #e3d6bb;
+    overflow:hidden;
+    position:relative;
+    display:flex; flex-direction:column;
+    min-height: 780px;
+  }
+  .device > * { position:relative; z-index:1; }
+  .ambient {
+    position:absolute; inset:0; z-index:0; pointer-events:none;
+    opacity:0; transition: opacity 1.5s ease, background 1.5s ease;
+  }
+
+  /* retro rainbow stripe */
+  .stripes { display:flex; height:10px; }
+  .stripes div { flex:1; }
+  .s1{background:#ff4f9a;} .s2{background:#ff7a1a;} .s3{background:#ffc21c;} .s4{background:#59c837;} .s5{background:#12b8b0;} .s6{background:#8b5cf6;}
+
+  /* ---------------- header / deadline tape ---------------- */
+  .head {
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 14px 22px 10px;
+  }
+  .brand {
+    font-weight: 900; font-size: 20px; letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .brand small {
+    display:block; font-size:9.5px; font-weight:700; letter-spacing:0.22em;
+    color:var(--muted); text-transform:uppercase; margin-top:1px;
+  }
+  .tape {
+    background: var(--ink);
+    color: var(--cream-text);
+    font-size: 12px; font-weight:700;
+    padding: 7px 12px;
+    border-radius: 6px;
+    transform: rotate(-1.2deg);
+    box-shadow: 0 2px 0 var(--shadow);
+    text-align:right;
+  }
+  .tape .t-label { font-size:9px; letter-spacing:0.14em; text-transform:uppercase; opacity:0.65; display:block; }
+  .tape b { font-variant-numeric: tabular-nums; }
+
+  .rule {
+    border:none; border-top: 2px dashed var(--line);
+    margin: 0 22px;
+  }
+
+  /* ---------------- stage ---------------- */
+  .stage { flex:1; display:flex; flex-direction:column; align-items:center; padding: 14px 24px 20px; }
+
+  .task-line { width:100%; text-align:center; margin-bottom: 4px; }
+  .tl-label {
+    display:inline-block;
+    font-size:10px; font-weight:800; letter-spacing:0.2em; text-transform:uppercase;
+    color:var(--cream-text); background: var(--accent);
+    padding: 3px 10px; border-radius: 4px;
+    margin-bottom: 6px;
+    transition: background 0.4s ease;
+  }
+  .task-line input, .task-line .run-task {
+    width:100%; border:none; background:transparent;
+    font: 800 19px/1.25 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color:var(--ink); text-align:center; outline:none;
+  }
+  .task-line input { border-bottom: 2px dashed transparent; }
+  .task-line input:focus { border-bottom-color: var(--line); }
+  .anchor-line { font-size:12.5px; color:var(--muted); margin:6px 0 8px; text-align:center; }
+  .anchor-line b { color:var(--ink-2); }
+
+  /* ---------------- the dial ---------------- */
+  .dial-wrap { position:relative; width: 292px; height: 292px; margin: 2px 0 8px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .dial-wrap svg { width:100%; height:100%; display:block; }
+  .bezel {
+    fill: var(--plastic-2);
+    stroke: #ddceb0; stroke-width: 1.5;
+  }
+  .face-bg { fill: var(--face); stroke:#e6dcc3; stroke-width:1; }
+  .wedge { transition: fill 0.5s ease; }
+  .hub-outer { fill:#e8dcc2; stroke:#cbbb98; stroke-width:1; }
+  .hub-inner { fill: var(--ink); }
+  .num {
+    font: 700 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+    fill: var(--ink-2);
+  }
+  .pulse-ring { fill:none; stroke-width:4; opacity:0; pointer-events:none; }
+  .pulse-ring.go { animation:pulse 1.1s ease-out 1; }
+  @keyframes pulse {
+    0%{opacity:0.8; transform:scale(1);} 100%{opacity:0; transform:scale(1.1);}
+  }
+  .final-minute .readout-val { animation: breathe 1s ease-in-out infinite; }
+  @keyframes breathe { 0%,100%{transform:scale(1);} 50%{transform:scale(1.05);} }
+
+  /* readout plate under dial */
+  .readout {
+    display:flex; align-items:baseline; gap:8px;
+    background: var(--ink);
+    color: var(--cream-text);
+    border-radius: 10px;
+    padding: 8px 20px 9px;
+    margin-bottom: 12px;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.4), 0 2px 0 var(--shadow);
+  }
+  .readout-val {
+    font-size: 34px; font-weight: 900; line-height:1;
+    font-variant-numeric: tabular-nums;
+    display:inline-block;
+  }
+  .readout-unit { font-size:11px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; opacity:0.7; }
+
+  /* ---------------- disc color picker ---------------- */
+  .swatches { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .sw-label { font-size:10px; font-weight:800; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted); }
+  .sw {
+    width:26px; height:26px; border-radius:50%;
+    border: 3px solid var(--plastic);
+    box-shadow: 0 0 0 2px var(--line), inset 0 -3px 0 rgba(0,0,0,0.18);
+    cursor:pointer; padding:0;
+  }
+  .sw.sel { box-shadow: 0 0 0 2.5px var(--ink), inset 0 -3px 0 rgba(0,0,0,0.18); }
+
+  /* ---------------- chips ---------------- */
+  .chips { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; justify-content:center; }
+  .chip {
+    border: 2px solid var(--line);
+    background: var(--face);
+    color: var(--ink-2);
+    font: 800 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 8px 15px; border-radius: 999px; cursor:pointer;
+    box-shadow: 0 2px 0 var(--line);
+  }
+  .chip:active { transform: translateY(1px); box-shadow:none; }
+  .chip.sel { border-color: var(--ink); color: var(--ink); background:#fff; }
+  .chip.race { border-color: var(--accent); color: var(--accent-deep); }
+
+  /* ---------------- buttons ---------------- */
+  .btn-primary {
+    width:100%; border:none;
+    background: var(--accent);
+    color:#fff;
+    font: 900 18px system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 17px; border-radius: 16px; cursor:pointer;
+    letter-spacing:0.01em;
+    box-shadow: 0 4px 0 var(--accent-deep), 0 8px 16px var(--shadow);
+    transition: background 0.4s ease, box-shadow 0.4s ease;
+  }
+  .btn-primary:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--accent-deep); }
+
+  .run-controls { display:flex; align-items:center; justify-content:center; gap:16px; width:100%; }
+  .btn-ghost {
+    border:2px solid var(--line); background:var(--face); color:var(--ink-2);
+    font: 800 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 10px 16px; cursor:pointer; border-radius:12px;
+    box-shadow: 0 2px 0 var(--line);
+  }
+  .btn-hold { position:relative; overflow:hidden; }
+  .btn-hold .fillbar {
+    position:absolute; left:0; top:0; bottom:0; width:0%;
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+    transition: width 0.1s linear;
+  }
+  .btn-hold span { position:relative; }
+  .hint { font-size:11.5px; color:var(--muted); margin-top:9px; text-align:center; }
+
+  /* ---------------- queue ---------------- */
+  .queue { width:100%; margin-top:14px; }
+  .queue h4 {
+    font-size:10px; font-weight:800; letter-spacing:0.18em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:6px;
+  }
+  .q-item {
+    display:flex; align-items:center; gap:8px;
+    padding: 9px 12px;
+    background: var(--face);
+    border: 2px solid var(--line);
+    border-radius: 12px; margin-bottom:6px;
+    cursor:pointer; font-size:14px; font-weight:600; color:var(--ink);
+    box-shadow: 0 2px 0 var(--line);
+  }
+  .q-item:hover { border-color: var(--ink-2); }
+  .q-item .q-min { margin-left:auto; color:var(--muted); font-size:12.5px; font-variant-numeric:tabular-nums; flex-shrink:0; font-weight:700; }
+  .q-item .q-x { border:none; background:none; color:var(--muted); cursor:pointer; font-size:15px; padding:0 2px; line-height:1; }
+  .q-add {
+    width:100%; border:2px dashed var(--line); background:transparent;
+    border-radius:12px; padding:10px 12px;
+    font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+    color:var(--ink); outline:none;
+  }
+  .q-add::placeholder { color: var(--muted); }
+  .q-add:focus { border-style:solid; border-color: var(--ink-2); }
+
+  /* ---------------- end / recovery ---------------- */
+  .endcard { width:100%; text-align:center; }
+  .endcard h2 { font-size:26px; font-weight:900; margin: 10px 0 6px; }
+  .endcard p { font-size:14px; color:var(--ink-2); margin-bottom:18px; }
+  .end-opts { display:flex; flex-direction:column; gap:10px; }
+  .end-opt {
+    display:flex; align-items:center; gap:14px; text-align:left;
+    background:var(--face);
+    border:2px solid var(--line); border-radius:14px;
+    padding:13px 15px; cursor:pointer; font-family:inherit;
+    box-shadow: 0 3px 0 var(--line);
+  }
+  .end-opt:active { transform:translateY(2px); box-shadow:none; }
+  .end-opt .eo-icon {
+    width:40px; height:40px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:18px; font-weight:900; flex-shrink:0;
+    color:#fff;
+    box-shadow: inset 0 -3px 0 rgba(0,0,0,0.2);
+  }
+  .eo-done .eo-icon { background:#59c837; }
+  .eo-flow .eo-icon { background:#12b8b0; }
+  .eo-two  .eo-icon { background:#ffc21c; }
+  .end-opt .eo-title { font-size:15px; font-weight:800; color:var(--ink); }
+  .end-opt .eo-sub { font-size:12.5px; color:var(--muted); margin-top:2px; }
+
+  .next-up {
+    margin-top:16px; padding:12px 16px; border-radius:12px;
+    background: var(--plastic-2);
+    border: 2px dashed var(--line);
+    font-size:13.5px; color:var(--ink-2);
+  }
+  .next-up b { color:var(--ink); }
+
+  .streak { display:flex; gap:7px; justify-content:center; margin-top:16px; }
+  .streak .dot {
+    width:12px; height:12px; border-radius:50%;
+    background:var(--line);
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.12);
+  }
+  .streak .dot.hit { background:#59c837; }
+  .streak .dot.miss { background:#ffc21c; }
+  .streak-label { font-size:11px; color:var(--muted); text-align:center; margin-top:6px; letter-spacing:0.04em; }
+
+  .confetti {
+    position:absolute; width:9px; height:13px; top:-14px; z-index:5;
+    animation: fall 1.6s ease-in forwards; border-radius:2px;
+  }
+  @keyframes fall { to { transform: translateY(840px) rotate(540deg); opacity:0.1; } }
+
+  /* ---------------- footer ---------------- */
+  .footer {
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 10px 22px 16px;
+  }
+  .made { font-size:10px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted); }
+  .toggles { display:flex; gap:6px; }
+  .tgl {
+    border:2px solid var(--line); background:var(--face); color:var(--ink-2);
+    font: 800 11px system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding:5px 10px; border-radius:999px; cursor:pointer;
+  }
+  .tgl.on { border-color: var(--ink); color: var(--ink); }
+
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+<div class="device" id="device">
+  <div class="ambient" id="ambient"></div>
+  <div class="stripes"><div class="s1"></div><div class="s2"></div><div class="s3"></div><div class="s4"></div><div class="s5"></div><div class="s6"></div></div>
+
+  <div class="head">
+    <div class="brand">one thing<small>at a time</small></div>
+    <div class="tape"><span class="t-label">Today's deadline · 5 PM</span>Send draft — <b id="dlCount">—</b></div>
+  </div>
+  <hr class="rule">
+
+  <div class="stage">
+
+    <!-- SETUP -->
+    <div id="setupView" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+      <div class="task-line">
+        <span class="tl-label">Do first</span>
+        <input id="taskInput" value="Open the doc and write the intro" spellcheck="false">
+      </div>
+      <div class="anchor-line">☕ after coffee · then → <b id="thenNext">clear inbox</b></div>
+
+      <div class="dial-wrap">
+        <svg viewBox="0 0 292 292" id="setupSvg">
+          <circle class="bezel" cx="146" cy="146" r="145"/>
+          <circle class="face-bg" cx="146" cy="146" r="128"/>
+          <path id="setupWedge" class="wedge" fill="var(--accent)"/>
+          <g id="setupTicks"></g>
+          <circle class="hub-outer" cx="146" cy="146" r="17"/>
+          <circle class="hub-inner" cx="146" cy="146" r="7"/>
+        </svg>
+      </div>
+
+      <div class="readout"><span class="readout-val" id="setupTime">15</span><span class="readout-unit">min</span></div>
+
+      <div class="swatches" id="swatches">
+        <span class="sw-label">Disc</span>
+        <button class="sw sel" data-c="#ff4f9a" data-d="#d12d77" style="background:#ff4f9a" title="Bubblegum"></button>
+        <button class="sw" data-c="#ff7a1a" data-d="#d15a08" style="background:#ff7a1a" title="Tangerine"></button>
+        <button class="sw" data-c="#ffc21c" data-d="#d69c05" style="background:#ffc21c" title="Sunshine"></button>
+        <button class="sw" data-c="#59c837" data-d="#3d9c22" style="background:#59c837" title="Lime"></button>
+        <button class="sw" data-c="#12b8b0" data-d="#0b8b85" style="background:#12b8b0" title="Turquoise"></button>
+        <button class="sw" data-c="#8b5cf6" data-d="#6a3fd1" style="background:#8b5cf6" title="Grape"></button>
+      </div>
+
+      <div class="chips" id="chips">
+        <button class="chip" data-min="5">5</button>
+        <button class="chip sel" data-min="15">15</button>
+        <button class="chip" data-min="25">25</button>
+        <button class="chip" data-min="45">45</button>
+        <button class="chip" data-min="60">60</button>
+        <button class="chip race" data-min="12">⚡ Race — 12</button>
+      </div>
+
+      <button class="btn-primary" id="startBtn">Wind it up — first step only</button>
+      <div class="hint">One sprint. Not the whole task.</div>
+
+      <div class="queue">
+        <h4>Up next — tap to load</h4>
+        <div id="queueList"></div>
+        <input id="queueAdd" class="q-add" placeholder="+ Add a task, minutes optional — e.g. &quot;Email Sam 10&quot;">
+      </div>
+    </div>
+
+    <!-- RUNNING -->
+    <div id="runView" class="hidden" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+      <div class="task-line">
+        <span class="tl-label" id="runLabel">Now</span>
+        <div class="run-task" id="runTask">—</div>
+      </div>
+      <div class="anchor-line" id="runSub">Seconds appear in the final minute.</div>
+
+      <div class="dial-wrap" id="dialWrap">
+        <svg viewBox="0 0 292 292">
+          <circle class="bezel" cx="146" cy="146" r="145"/>
+          <circle class="face-bg" cx="146" cy="146" r="128"/>
+          <path id="runWedge" class="wedge" fill="var(--accent)"/>
+          <g id="runTicks"></g>
+          <circle class="hub-outer" cx="146" cy="146" r="17"/>
+          <circle class="hub-inner" cx="146" cy="146" r="7"/>
+          <circle class="pulse-ring" id="pulseRing" cx="146" cy="146" r="128" stroke="var(--accent)" style="transform-origin:center;"/>
+        </svg>
+      </div>
+
+      <div class="readout"><span class="readout-val" id="runTime">15</span><span class="readout-unit" id="runUnit">min left</span></div>
+
+      <div class="run-controls">
+        <button class="btn-ghost" id="pauseBtn">Pause</button>
+        <button class="btn-ghost btn-hold" id="quitBtn"><div class="fillbar" id="quitFill"></div><span>Hold to stop</span></button>
+      </div>
+      <div class="hint">Swipe the dial ↑ when it's done · quitting takes a 2-second hold on purpose.</div>
+    </div>
+
+    <!-- END / RECOVERY -->
+    <div id="endView" class="hidden endcard">
+      <h2 id="endTitle">Ding.</h2>
+      <p id="endSub">No judgment — pick what actually happened.</p>
+      <div class="end-opts">
+        <button class="end-opt eo-done" id="optDone">
+          <div class="eo-icon">✓</div>
+          <div><div class="eo-title">Done — or done enough</div><div class="eo-sub">Counts. Progress beats perfect.</div></div>
+        </button>
+        <button class="end-opt eo-flow" id="optFlow">
+          <div class="eo-icon">∞</div>
+          <div><div class="eo-title">I'm in flow — keep going</div><div class="eo-sub">Rolls into overtime. Ride the hyperfocus.</div></div>
+        </button>
+        <button class="end-opt eo-two" id="optTwo">
+          <div class="eo-icon">2</div>
+          <div><div class="eo-title">Didn't start — 2-minute version</div><div class="eo-sub">Never miss twice. Tiny sprint, chain intact.</div></div>
+        </button>
+      </div>
+      <div class="streak" id="streak"></div>
+      <div class="streak-label">This week — a wobble is fine, two in a row is the enemy.</div>
+    </div>
+
+    <!-- DONE -->
+    <div id="doneView" class="hidden endcard">
+      <h2 style="color:var(--good-text)">Chain intact. 🔗</h2>
+      <p id="doneSub">15-minute sprint on the books.</p>
+      <div class="next-up" id="nextUpBox">Next anchor: after this → <b>clear inbox (10 min)</b></div>
+      <div class="streak" id="streakDone"></div>
+      <div class="streak-label">This week</div>
+      <button class="btn-primary" id="againBtn" style="margin-top:20px;">Wind up the next one</button>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <div class="made">One Thing at a Time · retro proto</div>
+    <div class="toggles">
+      <button class="tgl" id="soundTgl">🔔 sound</button>
+      <button class="tgl" id="tickTgl">tick</button>
+      <button class="tgl on" id="demoTgl">demo ×30</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // ---------- state ----------
+  var totalSec = 15 * 60;
+  var remainSec = totalSec;
+  var running = false, paused = false, overtime = false;
+  var overtimeSec = 0, tickHandle = null;
+  var speed = 30, soundOn = false, tickOn = false;
+  var milestonesFired = {};
+  var week = ['hit','hit','miss','hit',null,null,null];
+  var queue = [
+    { text: 'Clear inbox', min: 10 },
+    { text: 'Book dentist appointment', min: 5 }
+  ];
+  var FACE_MIN = 60; // authentic 60-minute face
+
+  function $(id){ return document.getElementById(id); }
+  var setupView=$('setupView'), runView=$('runView'), endView=$('endView'), doneView=$('doneView');
+  var ambient=$('ambient'), dialWrap=$('dialWrap'), pulseRing=$('pulseRing');
+
+  // ---------- dial face: ticks + counterclockwise numbers (Time-Timer style) ----------
+  function buildFace(groupId) {
+    var g = $(groupId);
+    var cx=146, cy=146, R=128;
+    var parts = [];
+    for (var m=0; m<60; m++) {
+      var major = (m % 5 === 0);
+      var a = (m/60) * Math.PI*2;           // CCW from top
+      var sin = -Math.sin(a), cos = -Math.cos(a); // negate sin → counterclockwise
+      var r1 = R - (major ? 12 : 6), r2 = R - 1;
+      parts.push('<line x1="'+(cx+sin*r1)+'" y1="'+(cy+cos*r1)+'" x2="'+(cx+sin*r2)+'" y2="'+(cy+cos*r2)+
+        '" stroke="'+(major?'#8a7a66':'#c9bb9d')+'" stroke-width="'+(major?2.2:1)+'"/>');
+      if (major) {
+        var rn = R - 24;
+        var nx = cx + sin*rn, ny = cy + cos*rn;
+        parts.push('<text class="num" x="'+nx+'" y="'+(ny+4.5)+'" text-anchor="middle">'+m+'</text>');
+      }
+    }
+    g.innerHTML = parts.join('');
+  }
+
+  // wedge sweeps COUNTERCLOCKWISE from 12, like turning a real Time Timer disc
+  function wedgePath(minutes) {
+    var cx=146, cy=146, r=128;
+    var frac = Math.min(minutes / FACE_MIN, 0.9999);
+    if (frac <= 0) return '';
+    var a = frac * Math.PI * 2;
+    var x = cx - r * Math.sin(a);
+    var y = cy - r * Math.cos(a);
+    var large = frac > 0.5 ? 1 : 0;
+    return 'M'+cx+' '+cy+' L'+cx+' '+(cy-r)+' A'+r+' '+r+' 0 '+large+' 0 '+x+' '+y+' Z';
+  }
+
+  // ---------- disc colors ----------
+  var root = document.documentElement;
+  $('swatches').addEventListener('click', function(e){
+    var b = e.target.closest('.sw'); if (!b) return;
+    document.querySelectorAll('.sw').forEach(function(s){ s.classList.remove('sel'); });
+    b.classList.add('sel');
+    root.style.setProperty('--accent', b.dataset.c);
+    root.style.setProperty('--accent-deep', b.dataset.d);
+  });
+
+  // ---------- sound: kitchen-timer ticks & ding ----------
+  var actx = null;
+  function blip(freq, dur, vol) {
+    if (!soundOn) return;
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'triangle'; o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(vol || 0.15, actx.currentTime + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+      o.connect(g); g.connect(actx.destination);
+      o.start(); o.stop(actx.currentTime + dur + 0.05);
+    } catch(e){}
+  }
+  function ding() { blip(1318, 0.6, 0.2); setTimeout(function(){ blip(1046, 0.9, 0.16); }, 120); }
+
+  // ---------- setup ----------
+  function paintSetup() {
+    $('setupWedge').setAttribute('d', wedgePath(totalSec/60));
+    $('setupTime').textContent = Math.round(totalSec/60);
+  }
+
+  $('chips').addEventListener('click', function(e){
+    var b = e.target.closest('.chip'); if (!b) return;
+    document.querySelectorAll('.chip').forEach(function(c){ c.classList.remove('sel'); });
+    b.classList.add('sel');
+    totalSec = parseInt(b.dataset.min,10)*60;
+    remainSec = totalSec;
+    paintSetup();
+  });
+
+  // ---------- queue ----------
+  function esc(s){ var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+  function renderQueue() {
+    var el = $('queueList'); el.innerHTML = '';
+    queue.forEach(function(t, i){
+      var row = document.createElement('div');
+      row.className = 'q-item';
+      row.innerHTML = '<span>'+esc(t.text)+'</span><span class="q-min">'+t.min+' min</span>';
+      var x = document.createElement('button');
+      x.className='q-x'; x.textContent='×'; x.title='Remove';
+      x.addEventListener('click', function(ev){ ev.stopPropagation(); queue.splice(i,1); renderQueue(); updateNextUp(); });
+      row.appendChild(x);
+      row.addEventListener('click', function(){ loadTask(i); });
+      el.appendChild(row);
+    });
+  }
+  function loadTask(i) {
+    var cur = $('taskInput').value.trim();
+    var t = queue.splice(i,1)[0];
+    if (cur) queue.unshift({ text: cur, min: Math.round(totalSec/60) });
+    $('taskInput').value = t.text;
+    totalSec = t.min*60; remainSec = totalSec;
+    document.querySelectorAll('.chip').forEach(function(c){ c.classList.remove('sel'); });
+    paintSetup(); renderQueue(); updateNextUp();
+  }
+  function updateNextUp() {
+    var n = queue[0];
+    $('thenNext').textContent = n ? n.text.toLowerCase() : 'free time';
+    $('nextUpBox').innerHTML = n
+      ? 'Next anchor: after this → <b>'+esc(n.text)+' ('+n.min+' min)</b>'
+      : 'Queue clear 🎉 — add tomorrow’s first task tonight.';
+  }
+  $('queueAdd').addEventListener('keydown', function(e){
+    if (e.key !== 'Enter') return;
+    var v = this.value.trim(); if (!v) return;
+    var m = v.match(/^(.*?)\s+(\d{1,3})$/);
+    queue.push({ text: m ? m[1] : v, min: m ? Math.max(1, parseInt(m[2],10)) : 15 });
+    this.value = '';
+    renderQueue(); updateNextUp();
+  });
+
+  // ---------- run loop ----------
+  function show(view){
+    [setupView,runView,endView,doneView].forEach(function(v){ v.classList.add('hidden'); });
+    view.classList.remove('hidden');
+  }
+  function css(v){ return getComputedStyle(root).getPropertyValue(v).trim(); }
+
+  function paintRun() {
+    var col = overtime ? '#12b8b0' : css('--accent');
+    $('runWedge').setAttribute('fill', col);
+    $('runWedge').setAttribute('d', wedgePath(overtime ? overtimeSec/60 : remainSec/60));
+
+    if (overtime) {
+      var m = Math.floor(overtimeSec/60), s = overtimeSec%60;
+      $('runTime').textContent = '+'+m+':'+String(s).padStart(2,'0');
+      $('runUnit').textContent = 'overtime — in flow';
+    } else if (remainSec <= 60) {
+      $('runTime').textContent = remainSec;
+      $('runUnit').textContent = 'seconds';
+      dialWrap.classList.add('final-minute');
+    } else {
+      $('runTime').textContent = Math.ceil(remainSec/60);
+      $('runUnit').textContent = 'min left';
+      dialWrap.classList.remove('final-minute');
+    }
+
+    var frac = overtime ? 1 : (remainSec/totalSec);
+    ambient.style.background = col;
+    ambient.style.opacity = overtime ? 0.04 : (frac > 0.5 ? 0.02 : frac > 0.2 ? 0.05 : 0.09);
+
+    if (!overtime) {
+      fireMilestone(frac <= 0.5, 'half', 660);
+      fireMilestone(frac <= 0.1, 'ninety', 880);
+      // long-timer checkpoints: every 20 min on sprints over 30 min
+      if (totalSec > 1800) {
+        var elapsed = totalSec - remainSec;
+        var idx = Math.floor(elapsed / 1200);
+        if (idx >= 1 && remainSec > 60 && !milestonesFired['ckpt'+idx]) {
+          milestonesFired['ckpt'+idx] = true;
+          pulseRing.classList.remove('go'); void pulseRing.offsetWidth; pulseRing.classList.add('go');
+          blip(740, 0.22); setTimeout(function(){ blip(740, 0.22); }, 260);
+          checkpointNudge(idx * 20);
+        }
+      }
+    }
+  }
+
+  var nudgeT = null;
+  function checkpointNudge(mins) {
+    var el = $('runSub');
+    el.textContent = mins + ' min in — still with me? Blink, stretch, back in.';
+    el.style.color = css('--accent-deep');
+    clearTimeout(nudgeT);
+    nudgeT = setTimeout(function(){
+      el.textContent = 'Seconds appear in the final minute.';
+      el.style.color = '';
+    }, 8000);
+  }
+
+  function fireMilestone(cond, key, freq) {
+    if (cond && !milestonesFired[key]) {
+      milestonesFired[key] = true;
+      pulseRing.classList.remove('go'); void pulseRing.offsetWidth; pulseRing.classList.add('go');
+      blip(freq, 0.25);
+    }
+  }
+
+  // soft mechanical tick — independent of the master sound toggle
+  function tickSound() {
+    if (!tickOn || speed !== 1) return; // only in real time; demo mode would machine-gun it
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      var o = actx.createOscillator(), g = actx.createGain(), f = actx.createBiquadFilter();
+      o.type = 'square'; o.frequency.value = 2400;
+      f.type = 'bandpass'; f.frequency.value = 2400; f.Q.value = 6;
+      g.gain.setValueAtTime(0.05, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 0.03);
+      o.connect(f); f.connect(g); g.connect(actx.destination);
+      o.start(); o.stop(actx.currentTime + 0.04);
+    } catch(e){}
+  }
+
+  function tick() {
+    if (paused) return;
+    tickSound();
+    if (overtime) { overtimeSec++; paintRun(); return; }
+    remainSec--;
+    if (remainSec <= 0) { remainSec = 0; paintRun(); endSprint(); return; }
+    paintRun();
+  }
+  function startTicking(){ clearInterval(tickHandle); tickHandle = setInterval(tick, 1000/speed); }
+
+  function startSprint(taskText, seconds, label) {
+    totalSec = seconds; remainSec = seconds;
+    overtime = false; overtimeSec = 0; milestonesFired = {};
+    paused = false; running = true;
+    $('runTask').textContent = taskText;
+    $('runLabel').textContent = label || 'Now';
+    $('pauseBtn').textContent = 'Pause';
+    show(runView); paintRun(); startTicking();
+    blip(520, 0.12);
+  }
+
+  $('startBtn').addEventListener('click', function(){
+    startSprint($('taskInput').value || 'Untitled sprint', totalSec, 'Now');
+  });
+
+  $('pauseBtn').addEventListener('click', function(){
+    paused = !paused; this.textContent = paused ? 'Resume' : 'Pause';
+  });
+
+  // hold-to-quit (2s friction)
+  (function(){
+    var holdT=null, prog=0;
+    var btn=$('quitBtn'), fill=$('quitFill');
+    function down(e){ e.preventDefault();
+      prog=0;
+      holdT=setInterval(function(){
+        prog+=100; fill.style.width = Math.min(100, prog/2000*100)+'%';
+        if (prog>=2000){ up(); running=false; clearInterval(tickHandle); endSprint(true); }
+      },100);
+    }
+    function up(){ clearInterval(holdT); holdT=null; fill.style.width='0%'; }
+    btn.addEventListener('mousedown',down); btn.addEventListener('touchstart',down,{passive:false});
+    ['mouseup','mouseleave','touchend','touchcancel'].forEach(function(ev){ btn.addEventListener(ev,up); });
+  })();
+
+  // ---------- end / recovery ----------
+  function endSprint(quit) {
+    clearInterval(tickHandle);
+    dialWrap.classList.remove('final-minute');
+    $('endTitle').textContent = quit ? 'Stopped early.' : 'Ding.';
+    $('endSub').textContent = quit
+      ? 'Still counts as showing up. Pick what happens next.'
+      : 'No judgment — pick what actually happened.';
+    renderStreak('streak');
+    show(endView);
+    ambient.style.opacity = 0;
+    if (!quit) ding();
+  }
+
+  function renderStreak(id) {
+    var el = $(id); el.innerHTML = '';
+    week.forEach(function(d){
+      var dot = document.createElement('div');
+      dot.className = 'dot' + (d==='hit' ? ' hit' : d==='miss' ? ' miss' : '');
+      el.appendChild(dot);
+    });
+  }
+
+  function completeDone() {
+    clearInterval(tickHandle);
+    dialWrap.classList.remove('final-minute');
+    ambient.style.opacity = 0;
+    week[4] = 'hit';
+    $('doneSub').textContent = Math.round(totalSec/60)+'-minute sprint on the books.';
+    renderStreak('streakDone');
+    show(doneView); confetti();
+    blip(659,0.2); setTimeout(function(){blip(784,0.2);},150); setTimeout(function(){blip(1047,0.4);},300);
+  }
+  $('optDone').addEventListener('click', completeDone);
+
+  // swipe UP on the dial while running = "it's done" — timer off, confetti
+  (function(){
+    var startY = null;
+    dialWrap.addEventListener('pointerdown', function(e){
+      startY = e.clientY;
+      try { dialWrap.setPointerCapture(e.pointerId); } catch(err){}
+    });
+    dialWrap.addEventListener('pointerup', function(e){
+      if (startY !== null && startY - e.clientY > 90 && running) completeDone();
+      startY = null;
+    });
+    dialWrap.addEventListener('pointercancel', function(){ startY = null; });
+  })();
+
+  $('optFlow').addEventListener('click', function(){
+    overtime = true; overtimeSec = 0; paused = false;
+    $('runLabel').textContent = 'Flow';
+    $('runSub').textContent = 'Overtime winds the disc back up. Stop whenever it fades.';
+    show(runView); paintRun(); startTicking();
+  });
+
+  $('optTwo').addEventListener('click', function(){
+    startSprint($('taskInput').value || 'Untitled', 120, '2-minute version');
+  });
+
+  $('againBtn').addEventListener('click', function(){
+    if (queue.length) {
+      var t = queue.shift();
+      $('taskInput').value = t.text;
+      totalSec = t.min*60;
+      document.querySelectorAll('.chip').forEach(function(c){ c.classList.remove('sel'); });
+      renderQueue(); updateNextUp();
+    }
+    remainSec = totalSec;
+    $('runSub').textContent = 'Seconds appear in the final minute.';
+    paintSetup(); show(setupView);
+  });
+
+  // ---------- confetti ----------
+  function confetti() {
+    var dev = $('device');
+    var cols = ['#ff4f9a','#ff7a1a','#ffc21c','#59c837','#12b8b0','#8b5cf6'];
+    for (var i=0;i<36;i++){
+      var c=document.createElement('div');
+      c.className='confetti';
+      c.style.position='absolute';
+      c.style.left=(Math.random()*100)+'%';
+      c.style.background=cols[i%cols.length];
+      c.style.animationDelay=(Math.random()*0.5)+'s';
+      c.style.animationDuration=(1.2+Math.random()*0.9)+'s';
+      c.style.zIndex=5;
+      dev.appendChild(c);
+      setTimeout(function(el){return function(){el.remove();};}(c), 2600);
+    }
+  }
+
+  // ---------- deadline tape countdown (17:00) ----------
+  function paintDeadline() {
+    var now = new Date();
+    var dl = new Date(now); dl.setHours(17,0,0,0);
+    var diff = Math.max(0, dl-now);
+    var h=Math.floor(diff/3600000), m=Math.floor(diff%3600000/60000);
+    $('dlCount').textContent = diff===0 ? 'due' : (h>0 ? h+'h '+String(m).padStart(2,'0')+'m' : m+'m');
+  }
+  paintDeadline(); setInterval(paintDeadline, 30000);
+
+  // ---------- toggles ----------
+  $('soundTgl').addEventListener('click', function(){
+    soundOn=!soundOn; this.classList.toggle('on', soundOn);
+    if (soundOn) blip(520,0.12);
+  });
+  $('tickTgl').addEventListener('click', function(){
+    tickOn = !tickOn; this.classList.toggle('on', tickOn);
+  });
+  $('demoTgl').addEventListener('click', function(){
+    speed = (speed===30) ? 1 : 30;
+    this.classList.toggle('on', speed===30);
+    this.textContent = speed===30 ? 'demo ×30' : 'real time';
+    if (running) startTicking();
+  });
+
+  // init
+  buildFace('setupTicks');
+  buildFace('runTicks');
+  paintSetup();
+  renderQueue();
+  updateNextUp();
+})();
+</script>
+</body>
+</html>
